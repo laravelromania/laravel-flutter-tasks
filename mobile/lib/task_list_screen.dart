@@ -13,6 +13,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
   final _api = ApiService();
   List<dynamic> _tasks = [];
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
@@ -21,12 +22,20 @@ class _TaskListScreenState extends State<TaskListScreen> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
-    final tasks = await _api.getTasks();
     setState(() {
-      _tasks = tasks;
-      _loading = false;
+      _loading = true;
+      _error = null;
     });
+    try {
+      final tasks = await _api.getTasks();
+      if (!mounted) return;
+      setState(() => _tasks = tasks);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = 'Nu am putut încărca task-urile.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   Future<void> _toggle(Map task) async {
@@ -69,6 +78,46 @@ class _TaskListScreenState extends State<TaskListScreen> {
     );
   }
 
+  Widget _buildBody() {
+    if (_error != null) {
+      return ListView(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(_error!, style: const TextStyle(color: Colors.red)),
+          ),
+        ],
+      );
+    }
+    if (_tasks.isEmpty) {
+      return ListView(
+        children: const [
+          Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(child: Text('Niciun task încă.')),
+          ),
+        ],
+      );
+    }
+    return ListView.builder(
+      itemCount: _tasks.length,
+      itemBuilder: (context, i) {
+        final task = _tasks[i] as Map;
+        return Dismissible(
+          key: ValueKey(task['id']),
+          direction: DismissDirection.endToStart,
+          onDismissed: (_) => _delete(task),
+          background: Container(color: Colors.red),
+          child: CheckboxListTile(
+            value: task['completed'] as bool,
+            onChanged: (_) => _toggle(task),
+            title: Text(task['title'] as String),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -84,28 +133,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: _tasks.isEmpty
-                  ? const Center(child: Text('Niciun task încă.'))
-                  : ListView.builder(
-                      itemCount: _tasks.length,
-                      itemBuilder: (context, i) {
-                        final task = _tasks[i] as Map;
-                        return Dismissible(
-                          key: ValueKey(task['id']),
-                          direction: DismissDirection.endToStart,
-                          onDismissed: (_) => _delete(task),
-                          background: Container(color: Colors.red),
-                          child: CheckboxListTile(
-                            value: task['completed'] as bool,
-                            onChanged: (_) => _toggle(task),
-                            title: Text(task['title'] as String),
-                          ),
-                        );
-                      },
-                    ),
-            ),
+          : RefreshIndicator(onRefresh: _load, child: _buildBody()),
     );
   }
 }
